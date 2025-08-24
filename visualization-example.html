@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GitHub Events Timeline Visualization</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .container {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .controls {
+            margin-bottom: 20px;
+            display: flex;
+            gap: 20px;
+            align-items: center;
+        }
+        .form-group {
+            display: flex;
+            flex-direction: column;
+        }
+        label {
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        input, button {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        #loading {
+            text-align: center;
+            color: #666;
+            display: none;
+        }
+        #error {
+            color: #dc3545;
+            display: none;
+            padding: 10px;
+            background: #f8d7da;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .chart-container {
+            position: relative;
+            height: 400px;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>GitHub Events Timeline Visualization</h1>
+        <p>Visualization of GitHub events (WatchEvent, PullRequestEvent, IssuesEvent) over time.</p>
+        
+        <div class="controls">
+            <div class="form-group">
+                <label for="apiUrl">API Base URL:</label>
+                <input type="text" id="apiUrl" 
+                       value="https://your-api-gateway-url.amazonaws.com/api" 
+                       placeholder="Enter your API Gateway URL">
+            </div>
+            <div class="form-group">
+                <label for="hours">Hours:</label>
+                <input type="number" id="hours" value="1" min="1" max="48">
+            </div>
+            <div class="form-group">
+                <label for="interval">Interval (minutes):</label>
+                <input type="number" id="interval" value="1" min="1" max="60">
+            </div>
+            <div class="form-group">
+                <label>&nbsp;</label>
+                <button onclick="loadData()">Load Data</button>
+            </div>
+        </div>
+        
+        <div id="loading">Loading data...</div>
+        <div id="error"></div>
+        
+        <div class="chart-container">
+            <canvas id="timelineChart"></canvas>
+        </div>
+    </div>
+
+    <script>
+        let chart = null;
+
+        async function loadData() {
+            const apiUrl = document.getElementById('apiUrl').value;
+            const hours = document.getElementById('hours').value;
+            const interval = document.getElementById('interval').value;
+            
+            const loadingEl = document.getElementById('loading');
+            const errorEl = document.getElementById('error');
+            
+            // Show loading
+            loadingEl.style.display = 'block';
+            errorEl.style.display = 'none';
+            
+            try {
+                const url = `${apiUrl}/visualization/timeline?hours=${hours}&interval=${interval}`;
+                const response = await fetch(url);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const data = await response.json();
+                renderChart(data);
+                
+            } catch (error) {
+                console.error('Error loading data:', error);
+                errorEl.textContent = `Error: ${error.message}`;
+                errorEl.style.display = 'block';
+            } finally {
+                loadingEl.style.display = 'none';
+            }
+        }
+
+        function renderChart(data) {
+            const ctx = document.getElementById('timelineChart').getContext('2d');
+            
+            // Destroy existing chart
+            if (chart) {
+                chart.destroy();
+            }
+            
+            // Prepare data for Chart.js
+            const labels = data.timeline.map(point => 
+                new Date(point.timestamp).toLocaleString()
+            );
+            
+            const datasets = [
+                {
+                    label: 'WatchEvent',
+                    data: data.timeline.map(point => point.counts.WatchEvent),
+                    borderColor: '#2196F3',
+                    backgroundColor: 'rgba(33, 150, 243, 0.1)',
+                    tension: 0.4
+                },
+                {
+                    label: 'PullRequestEvent',
+                    data: data.timeline.map(point => point.counts.PullRequestEvent),
+                    borderColor: '#4CAF50',
+                    backgroundColor: 'rgba(76, 175, 80, 0.1)',
+                    tension: 0.4
+                },
+                {
+                    label: 'IssuesEvent',
+                    data: data.timeline.map(point => point.counts.IssuesEvent),
+                    borderColor: '#FF9800',
+                    backgroundColor: 'rgba(255, 152, 0, 0.1)',
+                    tension: 0.4
+                }
+            ];
+            
+            chart = new Chart(ctx, {
+                type: 'line',
+                data: { labels, datasets },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Number of Events'
+                            }
+                        },
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Time'
+                            }
+                        }
+                    },
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: data.title
+                        },
+                        legend: {
+                            display: true,
+                            position: 'top'
+                        }
+                    }
+                }
+            });
+        }
+
+        // Load initial data
+        loadData();
+    </script>
+</body>
+</html>
