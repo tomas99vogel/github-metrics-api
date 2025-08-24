@@ -5,12 +5,12 @@
 Serverless application that collects public GitHub events (https://api.github.com/events) and provides metric through a REST API for selected event types. Built with AWS SAM, the system tracks selected events and PR activities, saves them to a DynamoDB and provides API endpoints via Lambda->API Gateway to calculate event and repository metrics.
 
 ### Design decisions
--  **GitHub event API**: 
+- **GitHub event API**: 
   - API enforces rate-limiting (60req/minute unauthenticated or up to 5000 with Github token)
   - Supports x-poll-interval for efficient polling and ETag
   - Low event volumes (< 1000/min)
 
--  **Architecture**: 
+- **Architecture**: 
   - AWS, using SAM
   - Serverless: Simple, cost-effective, no infrastructure management needed for this use case
      - Uses event polling and processing via Lambda with SQS decoupling for event processing. Polling uses DynamodDB as state storage to lookup the last Etag 
@@ -90,6 +90,7 @@ Serverless application that collects public GitHub events (https://api.github.co
 
 ```http
 GET /metrics/pr-average?repo=owner/repository
+GET /metrics/pr-average
 ```
 **Parameters:**
 - `repo`: String: Repository name to check. Calling the endpoint without the parameter returns list of already logged repos with 2 or more PRs
@@ -199,3 +200,4 @@ GET /metrics/events/count?offset=60
 - Add proper tests
 - Improve performance of visualization API - the query in unoptimized, populating the graph takes too long 
 - Make the API more modular for adding more events types and metric in the future
+- Add secure configuration option for Github token with SSM
