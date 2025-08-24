@@ -20,30 +20,61 @@ Serverless application that collects public GitHub events (https://api.github.co
 -  **Runtime costs**: Should be safely within AWS Free Tier limits 
 
 ## Architecture
+```mermaid
+graph LR
+  classDef system fill:#1168bd,stroke:#0b4884,color:#fff;
+  classDef external fill:#666,stroke:#444,color:#fff;
+  classDef person fill:#08427b,stroke:#052E56,color:#fff,rx:6,ry:6;
 
+  client[REST Client]:::person
+  api[GitHub Metrics API]:::system
+  github[GitHub]:::external
+
+  api --> |"Fetch events"| github
+  api --> |"Requests metrics via HTTP"| client
+  
 ```
-┌─────────────────┐    ┌──────────────┐    ┌─────────────────┐    ┌──────────────┐
-│   GitHub API    │    │ EventPoller  │    │   SQS Queue     │    │EventProcessor│
-│   /events       │◄───┤   Lambda     │───►│                 │───►│   Lambda     │
-│                 │    │              │    │                 │    │              │
-└─────────────────┘    └──────────────┘    └─────────────────┘    └──────────────┘
-                              │                                          │
-                              │                                          │
-                              ▼                                          ▼
-                       ┌──────────────┐                         ┌──────────────┐
-                       │  DynamoDB    │                         │  DynamoDB    │
-                       │ State Table  │                         │ProcessedEvents│
-                       │              │                         │    Table     │
-                       └──────────────┘                         └──────────────┘
-                                                                        │
-                                                                        │
-┌─────────────────┐    ┌──────────────┐    ┌─────────────────┐          │
-│   REST Client   │◄───┤StatisticsAPI │◄───┤  API Gateway    │          │
-│                 │    │   Lambda     │    │                 │          │
-└─────────────────┘    └──────────────┘    └─────────────────┘          │
-                              ▲                                         │
-                              │                                         │
-                              └─────────────────────────────────────────┘
+---
+```mermaid
+graph LR
+  classDef container fill:#1168bd,stroke:#0b4884,color:#fff;
+  classDef db fill:#438dd5,stroke:#0b4884,color:#fff;
+  classDef queue fill:#999,stroke:#666,color:#fff;
+  classDef external fill:#666,stroke:#444,color:#fff;
+  classDef person fill:#08427b,stroke:#052E56,color:#fff,rx:6,ry:6;
+
+  client[REST Client]:::person
+  github[GitHub]:::external
+
+  subgraph SystemBoundary["GitHub Metrics API"]
+    apig[API Gateway]:::container
+    stats[Statistics API - Lambda]:::container
+    viz[Visualization API - Lambda]:::container
+    poller[Event Poller - Lambda]:::container
+    processor[Event Processor - Lambda]:::container
+    sqs[SQS Events Queue]:::queue
+    dlq[Dead Letter Queue]:::queue
+    state[DynamoDB State Table]:::db
+    events[DynamoDB Processed Events]:::db
+    prsum[DynamoDB Repo PR Summary]:::db
+  end
+
+  client -->|"HTTPS/JSON"| apig
+  apig --> stats
+  apig --> viz
+
+  poller -->|"Polls /events (ETag)"| github
+
+  poller -->|"Read/Write state"| state
+  poller -->|"Enqueue events"| sqs
+  sqs -->|"Triggers"| processor
+  processor -->|"Write"| events
+  processor -.->|"On failure"| dlq
+
+  stats -->|"Read"| events
+  viz -->|"Read"| events
+  stats -->|"List repos"| prsum
+  processor -->|"Update"| prsum
 ```
 
 ## Components
@@ -139,7 +170,7 @@ GET /metrics/events/count?offset=60
 
 #### Render line graph of event types in time
 ```http
-GET  /visualization/timeline?hours=1&interval=1`
+GET  /visualization/timeline?hours=1&interval=1
 ```
 Use `visualisation-example.html` and insert the base API URL (outputed from `sam deploy`) to render
 
