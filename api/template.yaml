@@ -1,0 +1,335 @@
+# GitHub Statistics API - SAM Template
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: GitHub Events Statistics API - Monitor WatchEvent,
+  PullRequestEvent, and IssuesEvent
+
+Globals:
+  Function:
+    Runtime: python3.13
+    Timeout: 30
+    MemorySize: 256
+
+Resources:
+  # DynamoDB Tables
+  StateTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub ${AWS::StackName}-github-poller-state
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+
+  ProcessedEventsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub ${AWS::StackName}-processed-events
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+        - AttributeName: created_at
+          AttributeType: S
+        - AttributeName: event_type
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+        - AttributeName: created_at
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        # Simple GSI for event type queries
+        - IndexName: EventTypeIndex
+          KeySchema:
+            - AttributeName: event_type
+              KeyType: HASH
+            - AttributeName: created_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+
+  RepoPRSummary:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub ${AWS::StackName}-repo-pr-summary
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: repo_name
+          AttributeType: S
+      KeySchema:
+        - AttributeName: repo_name
+          KeyType: HASH
+
+  # SQS Queues
+  EventsQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub ${AWS::StackName}-github-events
+      VisibilityTimeout: 300
+      MessageRetentionPeriod: 1209600 # 14 days
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt EventsDeadLetterQueue.Arn
+        maxReceiveCount: 3
+
+  EventsDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub ${AWS::StackName}-github-events-dlq
+      MessageRetentionPeriod: 1209600 # 14 days
+
+  # Lambda Functions
+  EventPollerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-event-poller
+      CodeUri: EventPoller/
+      Handler: app.lambda_handler
+      Timeout: 300
+      MemorySize: 256
+      LoggingConfig:
+        LogGroup: !Sub /aws/lambda/${AWS::StackName}-event-poller
+        LogFormat: JSON
+        ApplicationLogLevel: INFO
+        SystemLogLevel: INFO
+      Environment:
+        Variables:
+          STATE_TABLE: !Ref StateTable
+          EVENTS_QUEUE_URL: !Ref EventsQueue
+      Events:
+        PollerSchedule:
+          Type: Schedule
+          Properties:
+            Schedule: rate(1 minute)
+            Description: Poll GitHub Events API every minute
+            Enabled: true
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref StateTable
+        - SQSSendMessagePolicy:
+            QueueName: !GetAtt EventsQueue.QueueName
+
+  EventProcessorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-event-processor
+      CodeUri: EventProcessor/
+      Handler: app.lambda_handler
+      Timeout: 300
+      MemorySize: 512
+      LoggingConfig:
+        LogGroup: !Sub /aws/lambda/${AWS::StackName}-event-processor
+        LogFormat: JSON
+        ApplicationLogLevel: INFO
+        SystemLogLevel: INFO
+      Environment:
+        Variables:
+          PROCESSED_EVENTS_TABLE: !Ref ProcessedEventsTable
+          REPO_PR_SUMMARY_TABLE: !Ref RepoPRSummary
+      Events:
+        SQSEvent:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt EventsQueue.Arn
+            BatchSize: 10
+            MaximumBatchingWindowInSeconds: 5
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ProcessedEventsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref RepoPRSummary
+
+  StatisticsAPIFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-statistics-api
+      CodeUri: StatisticsAPI/
+      Handler: app.lambda_handler
+      Timeout: 30
+      MemorySize: 256
+      LoggingConfig:
+        LogGroup: !Sub /aws/lambda/${AWS::StackName}-statistics-api
+        LogFormat: JSON
+        ApplicationLogLevel: INFO
+        SystemLogLevel: INFO
+      Environment:
+        Variables:
+          PROCESSED_EVENTS_TABLE: !Ref ProcessedEventsTable
+          REPO_PR_SUMMARY_TABLE: !Ref RepoPRSummary
+      Events:
+        # Calculate average time between PRs for a repository
+        PullRequestAverage:
+          Type: Api
+          Properties:
+            RestApiId: !Ref GitHubStatsAPI
+            Path: /metrics/pr-average
+            Method: GET
+        # Count events by type and time offset
+        EventCount:
+          Type: Api
+          Properties:
+            RestApiId: !Ref GitHubStatsAPI
+            Path: /metrics/events/count
+            Method: GET
+        # Handle CORS preflight requests
+        PullRequestAverageCORS:
+          Type: Api
+          Properties:
+            RestApiId: !Ref GitHubStatsAPI
+            Path: /metrics/pr-average
+            Method: OPTIONS
+        EventCountCORS:
+          Type: Api
+          Properties:
+            RestApiId: !Ref GitHubStatsAPI
+            Path: /metrics/events/count
+            Method: OPTIONS
+        # Catch-all 
+        MetricsCatchAll:
+          Type: Api
+          Properties:
+            RestApiId: !Ref GitHubStatsAPI
+            Path: /metrics/{proxy+}
+            Method: ANY
+      Policies:
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:Query
+                - dynamodb:GetItem
+                - dynamodb:Scan
+              Resource:
+                - !GetAtt ProcessedEventsTable.Arn
+                - !Sub ${ProcessedEventsTable.Arn}/index/EventTypeIndex
+                - !GetAtt RepoPRSummary.Arn
+
+  VisualizationAPIFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-visualization-api
+      CodeUri: VisualizationAPI/
+      Handler: app.lambda_handler
+      Timeout: 60
+      MemorySize: 512
+      LoggingConfig:
+        LogGroup: !Sub /aws/lambda/${AWS::StackName}-visualization-api
+        LogFormat: JSON
+        ApplicationLogLevel: INFO
+        SystemLogLevel: INFO
+      Environment:
+        Variables:
+          PROCESSED_EVENTS_TABLE: !Ref ProcessedEventsTable
+      Events:
+        # Timeline visualization endpoint
+        TimelineVisualization:
+          Type: Api
+          Properties:
+            RestApiId: !Ref GitHubStatsAPI
+            Path: /visualization/timeline
+            Method: GET
+        # Timeline visualization endpoint
+        TimelineVisualisation:
+          Type: Api
+          Properties:
+            RestApiId: !Ref GitHubStatsAPI
+            Path: /visualisation/timeline
+            Method: GET
+        # Handle CORS preflight requests
+        TimelineVisualizationCORS:
+          Type: Api
+          Properties:
+            RestApiId: !Ref GitHubStatsAPI
+            Path: /visualization/timeline
+            Method: OPTIONS
+        TimelineVisualisationCORS:
+          Type: Api
+          Properties:
+            RestApiId: !Ref GitHubStatsAPI
+            Path: /visualisation/timeline
+            Method: OPTIONS
+        # Catch-all for visualization paths
+        VisualizationCatchAll:
+          Type: Api
+          Properties:
+            RestApiId: !Ref GitHubStatsAPI
+            Path: /visualization/{proxy+}
+            Method: ANY
+        VisualisationCatchAll:
+          Type: Api
+          Properties:
+            RestApiId: !Ref GitHubStatsAPI
+            Path: /visualisation/{proxy+}
+            Method: ANY
+      Policies:
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:Query
+                - dynamodb:GetItem
+              Resource:
+                - !GetAtt ProcessedEventsTable.Arn
+                - !Sub ${ProcessedEventsTable.Arn}/index/EventTypeIndex
+
+  # API Gateway
+  GitHubStatsAPI:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: !Sub ${AWS::StackName}-github-events-metrics
+      StageName: api
+      Description: GitHub Statistics API for WatchEvent, PullRequestEvent, and
+        IssuesEvent metrics
+      Cors:
+        AllowMethods: '''GET, OPTIONS'''
+        AllowHeaders: '''Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'''
+        AllowOrigin: '''*'''
+        MaxAge: '''600'''
+
+Outputs:
+  # API Endpoints
+  GitHubStatsAPIUrl:
+    Description: GitHub Statistics API base URL
+    Value: !Sub https://${GitHubStatsAPI}.execute-api.${AWS::Region}.amazonaws.com/api
+    Export:
+      Name: !Sub ${AWS::StackName}-API-URL
+
+  PullRequestAverageEndpoint:
+    Description: Endpoint to calculate average time between PRs for a repository. If repo is omitted, returns a list of repos with >1 opened PR or null when none.
+    Value: !Sub https://${GitHubStatsAPI}.execute-api.${AWS::Region}.amazonaws.com/api/metrics/pr-average?repo=owner/repo
+    Export:
+      Name: !Sub ${AWS::StackName}-PR-Average-Endpoint
+
+  EventCountEndpoint:
+    Description: Endpoint to count events by type and time offset
+    Value: !Sub https://${GitHubStatsAPI}.execute-api.${AWS::Region}.amazonaws.com/api/metrics/events/count?offset={minutes}
+    Export:
+      Name: !Sub ${AWS::StackName}-Event-Count-Endpoint
+
+  EventTimelineEndpoint:
+    Description: Endpoint for timeline visualization of events (bonus feature)
+    Value: !Sub https://${GitHubStatsAPI}.execute-api.${AWS::Region}.amazonaws.com/api/visualization/timeline?hours=1&interval=1
+    Export:
+      Name: !Sub ${AWS::StackName}-Event-Timeline-Endpoint
+
+  # Infrastructure Resources
+  EventsQueueUrl:
+    Description: SQS Queue URL for GitHub events
+    Value: !Ref EventsQueue
+    Export:
+      Name: !Sub ${AWS::StackName}-EventsQueue
+
+  StateTableName:
+    Description: DynamoDB table for poller state
+    Value: !Ref StateTable
+    Export:
+      Name: !Sub ${AWS::StackName}-StateTable
+
+  ProcessedEventsTableName:
+    Description: DynamoDB table for processed events
+    Value: !Ref ProcessedEventsTable
+    Export:
+      Name: !Sub ${AWS::StackName}-ProcessedEventsTable
