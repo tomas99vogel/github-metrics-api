@@ -70,10 +70,9 @@ Serverless application that collects public GitHub events (https://api.github.co
   - `GET /metrics/events/count?offset=10` - Count events by type
 
 ### 4. **VisualizationAPI Lambda**
-- **Purpose**: Populate a line graph of the tracked metric
+- **Purpose**: Populate a line graph of the tracked event types in time
 - **Endpoints**:
 -  `GET  /visualization/timeline?hours=1&interval=1`
-- Use `visualisation-example.html` and insert the API URL to render
 
 ### 5. **DynamoDB Tables**
 - **StateTable**: Stores poller state (ETag, last event ID)
@@ -138,6 +137,13 @@ GET /metrics/events/count?offset=60
 }
 ```
 
+#### Render line graph of event types in time
+```http
+GET  /visualization/timeline?hours=1&interval=1`
+```
+Use `visualisation-example.html` and insert the base API URL (outputed from `sam deploy`) to render
+
+![Visualization Example](./_img/graph_example.png) 
 
 ## Quick start
 
@@ -159,14 +165,21 @@ GET /metrics/events/count?offset=60
    localstack start
    ```
 
-3. **Build and deploy locally**
+3. **Moto tests**
+   ```bash
+   python -m venv .venv
+   pip install -r tests/requirements.txt
+   pytest -q -v 
+   ```
+
+4. **Build and deploy locally**
    ```bash
    cd api
    sam build
    sam deploy --config-env localstack
    ```
-
-4. **Test the API**
+  
+5. **Test the API**
    ```bash
    # Get API URL from stack outputs
    aws cloudformation describe-stacks \
