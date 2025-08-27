@@ -20,7 +20,6 @@ dynamodb = boto3.resource(
     ),
 )
 
-
 def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     """Handle visualization API requests"""
 
@@ -126,7 +125,6 @@ def handle_timeline_visualization_request(
 
 def get_event_timeline_data(hours: int, interval_minutes: int) -> list[dict[str, Any]]:
     """Get event timeline data - OPTIMIZED with batch queries"""
-    end_time = datetime.now(UTC)
 
     # Calculate number of intervals (limit to prevent timeouts)
     total_minutes = hours * 60
@@ -140,7 +138,7 @@ def get_event_timeline_data(hours: int, interval_minutes: int) -> list[dict[str,
         futures = []
 
         for i in range(num_intervals):
-            interval_end = end_time - timedelta(minutes=i * interval_minutes)
+            interval_end = datetime.now(UTC) - timedelta(minutes=i * interval_minutes)
             interval_start = interval_end - timedelta(minutes=interval_minutes)
 
             future = executor.submit(get_interval_counts, event_types, interval_start, interval_end)

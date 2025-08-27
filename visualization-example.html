@@ -69,12 +69,12 @@
     <div class="container">
         <h1>GitHub Events Timeline Visualization</h1>
         <p>Visualization of GitHub events (WatchEvent, PullRequestEvent, IssuesEvent) over time.</p>
-        
+
         <div class="controls">
             <div class="form-group">
                 <label for="apiUrl">API Base URL:</label>
-                <input type="text" id="apiUrl" 
-                       value="https://your-api-gateway-url.amazonaws.com/api" 
+                <input type="text" id="apiUrl"
+                       value="https://your-api-gateway-url.amazonaws.com/api"
                        placeholder="Enter your API Gateway URL">
             </div>
             <div class="form-group">
@@ -90,10 +90,10 @@
                 <button onclick="loadData()">Load Data</button>
             </div>
         </div>
-        
+
         <div id="loading">Loading data...</div>
         <div id="error"></div>
-        
+
         <div class="chart-container">
             <canvas id="timelineChart"></canvas>
         </div>
@@ -106,25 +106,25 @@
             const apiUrl = document.getElementById('apiUrl').value;
             const hours = document.getElementById('hours').value;
             const interval = document.getElementById('interval').value;
-            
+
             const loadingEl = document.getElementById('loading');
             const errorEl = document.getElementById('error');
-            
+
             // Show loading
             loadingEl.style.display = 'block';
             errorEl.style.display = 'none';
-            
+
             try {
                 const url = `${apiUrl}/visualization/timeline?hours=${hours}&interval=${interval}`;
                 const response = await fetch(url);
-                
+
                 if (!response.ok) {
                     throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                 }
-                
+
                 const data = await response.json();
                 renderChart(data);
-                
+
             } catch (error) {
                 console.error('Error loading data:', error);
                 errorEl.textContent = `Error: ${error.message}`;
@@ -136,17 +136,17 @@
 
         function renderChart(data) {
             const ctx = document.getElementById('timelineChart').getContext('2d');
-            
+
             // Destroy existing chart
             if (chart) {
                 chart.destroy();
             }
-            
+
             // Prepare data for Chart.js
-            const labels = data.timeline.map(point => 
+            const labels = data.timeline.map(point =>
                 new Date(point.timestamp).toLocaleString()
             );
-            
+
             const datasets = [
                 {
                     label: 'WatchEvent',
@@ -170,7 +170,7 @@
                     tension: 0.4
                 }
             ];
-            
+
             chart = new Chart(ctx, {
                 type: 'line',
                 data: { labels, datasets },

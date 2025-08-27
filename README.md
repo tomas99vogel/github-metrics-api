@@ -13,7 +13,7 @@ Serverless application that collects public GitHub events (https://api.github.co
 - **Architecture**: 
   - AWS, using SAM
   - Serverless: Simple, cost-effective, no infrastructure management needed for this use case
-     - Uses event polling and processing via Lambda with SQS decoupling for event processing. Polling uses DynamodDB as state storage to lookup the last Etag 
+     - Logic for event polling and processing via Lambda with SQS decoupling. Polling uses DynamoDB as state storage to lookup the last Etag 
      - Events are stored in DynamoDB with schema designed for specific metrics
      - Endpoints are published through API Gateway
 

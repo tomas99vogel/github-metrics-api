@@ -91,7 +91,7 @@ def handle_pr_average_request(query_params: dict[str, str]) -> dict[str, Any]:
             repos = list_repos_with_opened_pr(min_count=2)
             return create_response(
                 200,
-                {"repositories": repos} if repos else None,  # type: ignore
+                {"repositories": repos} if repos else {"repositories": None}  
             )
         except Exception as e:
             logger.error(f"Failed to list repositories: {e}")
@@ -270,13 +270,13 @@ def get_events_by_type_and_time(event_types: list[str], minutes_offset: int) -> 
     return event_counts
 
 
-def list_repos_with_opened_pr(min_count: int = 1) -> list[str]:
+def list_repos_with_opened_pr(min_count: int = 2) -> list[str]:
     """Scan summary table and return repos where opened_pr_count > min_count."""
     table = dynamodb.Table(os.environ.get("REPO_PR_SUMMARY_TABLE", "repo-pr-summary"))
     repos: list[str] = []
     last_evaluated_key = None
     while True:
-        scan_kwargs = {"FilterExpression": Attr("opened_pr_count").gt(min_count)}
+        scan_kwargs = {"FilterExpression": Attr("opened_pr_count").gte(min_count)}
         if last_evaluated_key:
             scan_kwargs["ExclusiveStartKey"] = last_evaluated_key
         resp = table.scan(**scan_kwargs)
@@ -285,22 +285,6 @@ def list_repos_with_opened_pr(min_count: int = 1) -> list[str]:
         if not last_evaluated_key:
             break
     return repos
-
-
-def handle_repos_with_pr_request(query_params: dict[str, str]) -> dict[str, Any]:
-    """Return repositories with opened_pr_count > min_count from summary table."""
-    min_count = 1
-    if query_params and "min_count" in query_params:
-        try:
-            min_count = int(query_params["min_count"])
-        except Exception:
-            pass
-    try:
-        repos = list_repos_with_opened_pr(min_count=min_count)
-        return create_response(200, {"repositories": repos, "min_count": min_count})
-    except Exception as e:
-        logger.error(f"Failed to scan RepoPRSummary: {e}")
-        return create_response(500, {"error": "Failed to retrieve repo list"})
 
 
 def convert_decimals(obj):
