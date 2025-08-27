@@ -1,0 +1,14 @@
+target-version = "py313"
+line-length = 100
+
+extend-exclude = [
+  "api/.aws-sam",
+  ".venv",
+]
+
+[lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
+ignore = ["E501"]  # Line length
+
+[lint.isort]
+known-first-party = ["api", "tests"]
