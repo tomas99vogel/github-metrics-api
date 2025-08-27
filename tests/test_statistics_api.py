@@ -1,9 +1,8 @@
-import os
-import sys
-import json
 import importlib
+import json
+import sys
+from datetime import UTC, datetime
 from pathlib import Path
-from datetime import datetime, timezone
 
 import boto3
 
@@ -12,6 +11,7 @@ sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 PROCESSED_TABLE = "sam-app-processed-events"
 REGION = "eu-west-1"
+
 
 def test_pr_average_computation(moto_dynamodb):
     # Recreate the processed events table with the EventTypeIndex GSI
@@ -54,7 +54,7 @@ def test_pr_average_computation(moto_dynamodb):
             "event_type": "PullRequestEvent",
             "repo_name": repo,
             "actor_login": "tester",
-            "processed_at": datetime.now(timezone.utc).isoformat(),
+            "processed_at": datetime.now(UTC).isoformat(),
             "pr_action": "opened",
         },
         {
@@ -63,7 +63,7 @@ def test_pr_average_computation(moto_dynamodb):
             "event_type": "PullRequestEvent",
             "repo_name": repo,
             "actor_login": "tester",
-            "processed_at": datetime.now(timezone.utc).isoformat(),
+            "processed_at": datetime.now(UTC).isoformat(),
             "pr_action": "opened",
         },
         {
@@ -72,7 +72,7 @@ def test_pr_average_computation(moto_dynamodb):
             "event_type": "PullRequestEvent",
             "repo_name": repo,
             "actor_login": "tester",
-            "processed_at": datetime.now(timezone.utc).isoformat(),
+            "processed_at": datetime.now(UTC).isoformat(),
             "pr_action": "opened",
         },
         # Noise: other repo and non-PR event
@@ -82,7 +82,7 @@ def test_pr_average_computation(moto_dynamodb):
             "event_type": "PullRequestEvent",
             "repo_name": "someone/else",
             "actor_login": "tester",
-            "processed_at": datetime.now(timezone.utc).isoformat(),
+            "processed_at": datetime.now(UTC).isoformat(),
             "pr_action": "opened",
         },
         {
@@ -91,7 +91,7 @@ def test_pr_average_computation(moto_dynamodb):
             "event_type": "WatchEvent",
             "repo_name": repo,
             "actor_login": "tester",
-            "processed_at": datetime.now(timezone.utc).isoformat(),
+            "processed_at": datetime.now(UTC).isoformat(),
         },
     ]
 
@@ -114,6 +114,7 @@ def test_pr_average_computation(moto_dynamodb):
 
     # Import after table + GSI exist so module binds to mocked DynamoDB
     from api.StatisticsAPI import app as stats
+
     importlib.reload(stats)
 
     # Call the API handler for pr-average with the target repo

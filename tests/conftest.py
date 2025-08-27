@@ -1,4 +1,3 @@
-import os
 import boto3
 import pytest
 
@@ -11,6 +10,7 @@ REGION = "eu-west-1"
 PROCESSED_TABLE = "sam-app-processed-events"
 SUMMARY_TABLE = "sam-app-repo-pr-summary"
 
+
 @pytest.fixture()
 def ddb_env(monkeypatch):
     # Set env before any boto3 clients/resources are created
@@ -18,6 +18,7 @@ def ddb_env(monkeypatch):
     monkeypatch.setenv("PROCESSED_EVENTS_TABLE", PROCESSED_TABLE)
     monkeypatch.setenv("REPO_PR_SUMMARY_TABLE", SUMMARY_TABLE)
     yield
+
 
 @pytest.fixture()
 def moto_dynamodb(ddb_env):
