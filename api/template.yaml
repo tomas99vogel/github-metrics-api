@@ -187,7 +187,7 @@ Resources:
             RestApiId: !Ref GitHubStatsAPI
             Path: /metrics/events/count
             Method: OPTIONS
-        # Catch-all 
+        # Catch-all
         MetricsCatchAll:
           Type: Api
           Properties:
